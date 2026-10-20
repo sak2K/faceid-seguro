@@ -4,6 +4,8 @@ Sistema web de reconhecimento facial **100% local**, com interface moderna e res
 Acessa a câmera do dispositivo, detecta rostos em tempo real e identifica pessoas **previamente cadastradas com autorização**, exibindo nome e foto.
 Todos os dados (nomes, fotos e biometria) ficam **criptografados no próprio navegador** — nada é enviado para servidores.
 
+**Versão online:** <https://sak2k.github.io/faceid-seguro/>
+
 ## Funcionalidades
 
 | Recurso | Detalhes |
@@ -48,7 +50,7 @@ Feche e abra o terminal e confira com `node -v`.
 Extraia o `.zip` ou clone o repositório:
 
 ```powershell
-git clone https://github.com/SEU-USUARIO/faceid-seguro.git
+git clone https://github.com/sak2K/faceid-seguro.git
 cd faceid-seguro
 ```
 
