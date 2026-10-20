@@ -1,0 +1,15 @@
+{
+  "name": "faceid-seguro",
+  "version": "1.0.0",
+  "description": "Sistema web de reconhecimento facial local, criptografado e baseado em consentimento.",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "start": "node server.js --open",
+    "serve": "node server.js",
+    "check": "node --check server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

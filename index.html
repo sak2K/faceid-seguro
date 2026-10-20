@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: mediastream:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'" />
+  <meta name="referrer" content="no-referrer" />
+  <meta name="color-scheme" content="dark light" />
+  <title>FaceID Seguro — Reconhecimento Facial com Consentimento</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="css/styles.css" />
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <noscript>
+    <div class="noscript">Este sistema precisa de JavaScript habilitado para funcionar.</div>
+  </noscript>
+
+  <!-- Aviso quando aberto via file:// -->
+  <div id="file-protocol-warning" class="banner banner-error" hidden>
+    <strong>Atenção:</strong> abra o sistema por um servidor local (ex.: <code>npm start</code> ou a extensão Live Server do VS Code).
+    O navegador bloqueia câmera e módulos quando o arquivo é aberto diretamente (file://).
+  </div>
+
+  <!-- ===================== Tela do cofre (bloqueio) ===================== -->
+  <section id="vault-screen" class="vault-screen" aria-labelledby="vault-title">
+    <div class="vault-card card">
+      <div class="brand brand-lg">
+        <img src="assets/favicon.svg" alt="" width="44" height="44" />
+        <div>
+          <h1 id="vault-title">FaceID Seguro</h1>
+          <p class="muted">Reconhecimento facial local, criptografado e com consentimento</p>
+        </div>
+      </div>
+
+      <!-- Criação do cofre -->
+      <form id="vault-create-form" class="stack" hidden autocomplete="off">
+        <h2>Criar cofre seguro</h2>
+        <p class="muted small">
+          Defina uma senha mestra. Ela protege (AES-256-GCM) todos os nomes, fotos e dados biométricos
+          armazenados <strong>somente neste navegador</strong>. A senha nunca é salva — se esquecê-la, os dados não poderão ser recuperados.
+        </p>
+        <label class="field">
+          <span>Senha mestra (mín. 8 caracteres)</span>
+          <input id="vault-create-password" type="password" minlength="8" maxlength="256" required autocomplete="new-password" />
+        </label>
+        <div class="strength" aria-hidden="true"><div id="password-strength-bar"></div></div>
+        <p id="password-strength-label" class="small muted" aria-live="polite"></p>
+        <label class="field">
+          <span>Confirmar senha</span>
+          <input id="vault-create-confirm" type="password" minlength="8" maxlength="256" required autocomplete="new-password" />
+        </label>
+        <label class="check">
+          <input id="vault-terms" type="checkbox" required />
+          <span>Declaro que usarei o sistema apenas com pessoas que autorizaram expressamente o uso de sua imagem e de seus dados biométricos, conforme a LGPD (Lei 13.709/2018).</span>
+        </label>
+        <button type="submit" class="btn btn-primary btn-block">Criar cofre</button>
+      </form>
+
+      <!-- Desbloqueio -->
+      <form id="vault-unlock-form" class="stack" hidden autocomplete="off">
+        <h2>Desbloquear</h2>
+        <label class="field">
+          <span>Senha mestra</span>
+          <input id="vault-unlock-password" type="password" maxlength="256" required autocomplete="current-password" />
+        </label>
+        <button type="submit" class="btn btn-primary btn-block">Desbloquear</button>
+        <button type="button" id="vault-forgot" class="btn btn-link small">Esqueci a senha (apagar todos os dados)</button>
+      </form>
+
+      <p id="vault-message" class="form-message" role="alert" aria-live="assertive"></p>
+      <p class="small muted center">
+        Trocou de computador? <label for="vault-import-input" class="btn btn-link small">Restaurar backup criptografado</label>
+        <input id="vault-import-input" type="file" accept="application/json,.json" hidden />
+      </p>
+      <p id="vault-loading" class="small muted" hidden><span class="spinner"></span> Processando…</p>
+    </div>
+  </section>
+
+  <!-- ===================== Aplicação ===================== -->
+  <div id="app" class="app" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <img src="assets/favicon.svg" alt="" width="32" height="32" />
+        <span class="brand-name">FaceID Seguro</span>
+      </div>
+      <nav class="tabs" role="tablist" aria-label="Seções">
+        <button class="tab active" role="tab" aria-selected="true" aria-controls="panel-recognize" id="tab-recognize" data-panel="panel-recognize">Reconhecer</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-register" id="tab-register" data-panel="panel-register">Cadastrar</button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-people" id="tab-people" data-panel="panel-people">Pessoas <span id="people-count" class="badge">0</span></button>
+        <button class="tab" role="tab" aria-selected="false" aria-controls="panel-settings" id="tab-settings" data-panel="panel-settings">Privacidade</button>
+      </nav>
+      <button id="lock-btn" class="btn btn-ghost" title="Bloquear cofre">Bloquear</button>
+    </header>
+
+    <div id="status-bar" class="status-bar status-info" role="status" aria-live="polite">
+      <span class="status-dot"></span><span id="status-text">Iniciando…</span>
+    </div>
+
+    <main>
+      <!-- ---------- Reconhecer ---------- -->
+      <section id="panel-recognize" class="panel active" role="tabpanel" aria-labelledby="tab-recognize">
+        <div class="layout-2">
+          <div class="card">
+            <div class="card-head">
+              <h2>Câmera ao vivo</h2>
+              <div class="row gap-s">
+                <select id="camera-select" class="select" aria-label="Selecionar câmera" hidden></select>
+              </div>
+            </div>
+            <div class="video-wrap" id="recognize-video-wrap">
+              <video id="recognize-video" playsinline muted></video>
+              <canvas id="recognize-overlay"></canvas>
+              <div class="video-placeholder" id="recognize-placeholder">
+                <p>Câmera desligada</p>
+                <p class="small muted">Nenhuma imagem é enviada para a internet. Todo o processamento é feito no seu dispositivo.</p>
+              </div>
+              <span class="rec-indicator" id="recognize-rec" hidden>● Câmera ativa</span>
+            </div>
+            <div class="row gap-s wrap mt">
+              <button id="recognize-start" class="btn btn-primary">Iniciar reconhecimento</button>
+              <button id="recognize-stop" class="btn" disabled>Parar</button>
+              <span class="muted small" id="recognize-fps"></span>
+            </div>
+          </div>
+          <aside class="card">
+            <div class="card-head"><h2>Identificados agora</h2></div>
+            <ul id="recognized-list" class="recognized-list" aria-live="polite"></ul>
+            <p id="recognized-empty" class="muted small">Nenhum rosto detectado.</p>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ---------- Cadastrar ---------- -->
+      <section id="panel-register" class="panel" role="tabpanel" aria-labelledby="tab-register" hidden>
+        <div class="layout-2">
+          <div class="card">
+            <div class="card-head">
+              <h2>1. Capturar amostras do rosto</h2>
+            </div>
+            <div class="video-wrap" id="register-video-wrap">
+              <video id="register-video" playsinline muted></video>
+              <canvas id="register-overlay"></canvas>
+              <div class="video-placeholder" id="register-placeholder">
+                <p>Câmera desligada</p>
+                <p class="small muted">Ligue a câmera ou envie fotos. Use boa iluminação e apenas um rosto por imagem.</p>
+              </div>
+            </div>
+            <div class="row gap-s wrap mt">
+              <button id="register-camera-toggle" class="btn">Ligar câmera</button>
+              <button id="register-capture" class="btn btn-primary" disabled>Capturar amostra</button>
+              <label class="btn" for="register-upload">Enviar foto(s)</label>
+              <input id="register-upload" type="file" accept="image/jpeg,image/png,image/webp" multiple hidden />
+            </div>
+            <p class="small muted mt">Recomendado: 3 a 5 amostras com pequenas variações de ângulo. Máximo de 10.</p>
+            <ul id="samples-list" class="samples-list" aria-label="Amostras capturadas"></ul>
+          </div>
+
+          <form id="register-form" class="card stack" autocomplete="off" novalidate>
+            <div class="card-head"><h2>2. Dados e consentimento</h2></div>
+            <label class="field">
+              <span>Nome completo *</span>
+              <input id="register-name" type="text" maxlength="80" required placeholder="Ex.: Maria da Silva" />
+            </label>
+            <label class="field">
+              <span>Observação (opcional)</span>
+              <input id="register-note" type="text" maxlength="120" placeholder="Ex.: Equipe administrativa" />
+            </label>
+            <fieldset class="consent">
+              <legend>Termo de consentimento *</legend>
+              <p class="small">
+                A pessoa acima autoriza, de forma livre, informada e inequívoca, a coleta e o armazenamento de sua imagem
+                e de sua <strong>representação biométrica facial</strong> exclusivamente para fins de identificação neste sistema.
+                Os dados ficam criptografados neste dispositivo e podem ser excluídos a qualquer momento, mediante solicitação.
+                Para menores de 18 anos é necessária a autorização do responsável legal.
+              </p>
+              <label class="check">
+                <input id="register-consent" type="checkbox" required />
+                <span>A pessoa (ou seu responsável legal) leu e concordou com o termo acima.</span>
+              </label>
+              <label class="field">
+                <span>Consentimento registrado por *</span>
+                <input id="register-consent-by" type="text" maxlength="80" required placeholder="Nome de quem coletou a autorização" />
+              </label>
+            </fieldset>
+            <p id="register-message" class="form-message" role="alert" aria-live="assertive"></p>
+            <div class="row gap-s wrap">
+              <button type="submit" id="register-save" class="btn btn-primary">Salvar cadastro</button>
+              <button type="button" id="register-reset" class="btn">Limpar</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- ---------- Pessoas ---------- -->
+      <section id="panel-people" class="panel" role="tabpanel" aria-labelledby="tab-people" hidden>
+        <div class="card">
+          <div class="card-head">
+            <h2>Pessoas cadastradas</h2>
+            <input id="people-search" type="search" class="input" placeholder="Buscar por nome…" aria-label="Buscar por nome" maxlength="80" />
+          </div>
+          <ul id="people-grid" class="people-grid"></ul>
+          <p id="people-empty" class="muted">Nenhuma pessoa cadastrada ainda. Use a aba <strong>Cadastrar</strong>.</p>
+        </div>
+      </section>
+
+      <!-- ---------- Privacidade / Configurações ---------- -->
+      <section id="panel-settings" class="panel" role="tabpanel" aria-labelledby="tab-settings" hidden>
+        <div class="layout-2">
+          <div class="card stack">
+            <div class="card-head"><h2>Reconhecimento</h2></div>
+            <label class="field">
+              <span>Rigor da comparação: <strong id="threshold-value">0,50</strong></span>
+              <input id="threshold" type="range" min="0.30" max="0.70" step="0.01" value="0.50" />
+              <small class="muted">Menor = mais rigoroso (menos falsos positivos). Recomendado: 0,45 – 0,55.</small>
+            </label>
+            <label class="field">
+              <span>Modo de detecção</span>
+              <select id="detector-mode" class="select">
+                <option value="fast">Rápido (TinyFaceDetector) — ideal para tempo real</option>
+                <option value="accurate">Preciso (SSD MobileNet) — mais lento</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Bloqueio automático por inatividade</span>
+              <select id="autolock" class="select">
+                <option value="5">5 minutos</option>
+                <option value="10">10 minutos</option>
+                <option value="30">30 minutos</option>
+                <option value="0">Nunca (não recomendado)</option>
+              </select>
+            </label>
+
+            <div class="card-head mt"><h2>Alterar senha mestra</h2></div>
+            <form id="change-password-form" class="stack" autocomplete="off">
+              <label class="field"><span>Senha atual</span><input id="cp-old" type="password" required maxlength="256" autocomplete="current-password" /></label>
+              <label class="field"><span>Nova senha (mín. 8)</span><input id="cp-new" type="password" required minlength="8" maxlength="256" autocomplete="new-password" /></label>
+              <label class="field"><span>Confirmar nova senha</span><input id="cp-confirm" type="password" required minlength="8" maxlength="256" autocomplete="new-password" /></label>
+              <button type="submit" class="btn">Alterar senha</button>
+            </form>
+          </div>
+
+          <div class="card stack">
+            <div class="card-head"><h2>Seus dados</h2></div>
+            <p class="small">
+              <strong>Onde ficam os dados?</strong> Apenas no armazenamento local (IndexedDB) deste navegador, criptografados com
+              AES-256-GCM. A chave é derivada da sua senha mestra (PBKDF2-SHA-256, 600.000 iterações) e existe apenas na memória enquanto o cofre está desbloqueado.
+            </p>
+            <p class="small">
+              <strong>Nada é enviado para servidores.</strong> Os modelos de IA são carregados localmente e a análise das imagens acontece no seu dispositivo.
+              A política de segurança de conteúdo (CSP) bloqueia conexões externas.
+            </p>
+            <div class="row gap-s wrap">
+              <button id="export-btn" class="btn">Exportar backup criptografado</button>
+              <label class="btn" for="import-input">Importar backup</label>
+              <input id="import-input" type="file" accept="application/json,.json" hidden />
+            </div>
+            <div class="danger-zone stack">
+              <h3>Zona de perigo</h3>
+              <p class="small muted">Remove permanentemente todas as pessoas, fotos, dados biométricos e a senha deste navegador.</p>
+              <button id="wipe-btn" class="btn btn-danger">Apagar todos os dados</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer small muted">
+      Processamento 100% local · Dados criptografados · Use somente com consentimento.
+    </footer>
+  </div>
+
+  <!-- Diálogo de confirmação reutilizável -->
+  <dialog id="confirm-dialog" class="dialog">
+    <form method="dialog" class="stack">
+      <h2 id="confirm-title">Confirmar</h2>
+      <p id="confirm-text"></p>
+      <label class="field" id="confirm-input-wrap" hidden>
+        <span id="confirm-input-label"></span>
+        <input id="confirm-input" type="text" autocomplete="off" />
+      </label>
+      <div class="row gap-s end">
+        <button value="cancel" class="btn">Cancelar</button>
+        <button value="ok" id="confirm-ok" class="btn btn-danger">Confirmar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+</body>
+</html>

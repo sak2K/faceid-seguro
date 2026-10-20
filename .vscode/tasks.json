@@ -1,0 +1,17 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Iniciar FaceID Seguro",
+      "type": "shell",
+      "command": "node server.js",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "faceid",
+        "pattern": { "regexp": "^__never__$" },
+        "background": { "activesBegin": true, "beginsPattern": "FaceID Seguro", "endsPattern": "Acesse:" }
+      },
+      "group": { "kind": "build", "isDefault": true }
+    }
+  ]
+}

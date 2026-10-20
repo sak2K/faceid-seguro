@@ -1,0 +1,19 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Abrir no Microsoft Edge",
+      "type": "msedge",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "preLaunchTask": "Iniciar FaceID Seguro"
+    },
+    {
+      "name": "Abrir no Google Chrome",
+      "type": "chrome",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "preLaunchTask": "Iniciar FaceID Seguro"
+    }
+  ]
+}
